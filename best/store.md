@@ -4,6 +4,8 @@
 本章节完全是出于个人见解的，你完全不必强行应用这些实践。
 有很多种使用 MobX 和 React 的方式，这仅仅只是其中的一个。
 
+本章主要介绍一种使用 MobX 的不唐突的方式，它在现有的代码库中，或者搭配经典的 MVC 模式表现良好。作为替代方案，还有一种组织 stores 更专用的方式是使用 [mobx-state-tree](https://github.com/mobxjs/mobx-state-tree)，它具有一些很酷的自带功能: 结构共享快照、动作中间件、JSON 补丁支持，等等。
+
 # Stores(存储)
 
 让我们先从 _store_ 开始。
@@ -93,7 +95,7 @@ export default singleton;
 Store 的职责:
 * 实例化领域对象， 确保领域对象知道它们所属的 store。
 * 确保每个领域对象只有一个实例。
-同一个用户、订单或者待办事项在内存中不应该在内存中出现两次。
+同一个用户、订单或者待办事项不应该在内存中出现两次。
 这样，可以安全地使用引用，并确保正在查看的实例是最新的，而无需解析引用。
 当调试时这十分快速、简单、方便。
 * 提供后端集成，当需要时存储数据。
@@ -269,3 +271,45 @@ export class Todo {
     }
 }
 ```
+
+# 组合多个 stores
+
+一个经常被问到的问题就是，如何不使用单例来组合多个 stores 。它们之间如何通信呢？
+
+一种高效的模式是创建一个 `RootStore` 来实例化所有 stores ，并共享引用。这种模式的优势是:
+
+1. 设置简单
+2. 很好的支持强类型
+3. 使得复杂的单元测试变得简单，因为你只需要实例化一个根 store
+
+示例:
+
+```javascript
+class RootStore {
+  constructor() {
+    this.userStore = new UserStore(this)
+    this.todoStore = new TodoStore(this)
+  }
+}
+
+class UserStore {
+  constructor(rootStore) {
+    this.rootStore = rootStore
+  }
+
+  getTodos(user) {
+    // 通过根 store 来访问 todoStore
+    return this.rootStore.todoStore.todos.filter(todo => todo.author === user)
+  }
+}
+
+class TodoStore {
+  @observable todos = []
+
+  constructor(rootStore) {
+    this.rootStore = rootStore
+  }
+}
+```
+
+当使用 React 时，这个根 store 通常会通过使用 `<Provider rootStore={new RootStore()}><App /></Provider>` 来插入到组件树之中。

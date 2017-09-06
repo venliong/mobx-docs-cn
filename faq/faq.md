@@ -12,7 +12,7 @@ MobX 只能在 ES5 环境中运行。这意味着支持 Node.js、Rhino和所有
 当你想对**状态**作出反应，而不是**事件**时，MobX 提供了一种更容易而且高层级处理方法。
 实际上，结合 RxJS 和 MobX 可能会产生真正强大的架构。
 例如使用 RxJS 来处理和节流用户事件，并作为更新状态的结果。
-如果状态已经被 MobX 转变成 observable ，则它将相应地处理更新 UI 和其他推导。
+如果状态已经被 MobX 转变成 observable ，则它将相应地处理更新 UI 和其它衍生。
 
 ##### 支持 React Native 吗?
 
@@ -50,3 +50,7 @@ MobX 同样可以在服务器端使用，并且它已经可以和 jQuery (参见
 
 当然可以，加入 reactiflux 频道或签出代码。或者，提交一个 issue，以激励我做一些更好的规划 :)。
 还可以参见这篇 [Medium 文章](https://medium.com/@mweststrate/becoming-fully-reactive-an-in-depth-explanation-of-mobservable-55995262a254)。
+
+##### 我可以在哪找到更多的 MobX 资源?
+
+我们已经在 [官方的 awesome mobx](https://github.com/mobxjs/awesome-mobx#awesome-mobx) 中编辑了大量各种类型的有帮助的资源列表。如果你觉得它缺少某些资源的话，请开启 [issue](https://github.com/mobxjs/awesome-mobx/issues/new) 或 [pull request](https://github.com/mobxjs/awesome-mobx/compare) 来描述你想要寻找或分享您所添加的链接 :) 。

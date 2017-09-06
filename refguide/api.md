@@ -1,432 +1,365 @@
-Disclaimer: this document is work in progress but reflects the latest 0.6 release.
+# MobX API参考
 
-# Reference Guide
+适用于 MobX 3或者更高版本。对于 MobX 2，旧文档依然可以在[github](https://github.com/mobxjs/mobx/blob/7c9e7c86e0c6ead141bb0539d33143d0e1f576dd/docs/refguide/api.md)找到。
 
-MobX divides your application into three different concepts:
+# 核心API
 
-1. State
-2. Views on your state
-3. State management
+MobX 中最重要的API。理解了`observable`、 `computed`、 `reactions` 和 `actions`的话，说明对于 Mobx 已经足够精通了,在你的应用中使用它吧！
 
-_State_ is is all the factual information that lives inside your application.
-This might be the profile of the user that is logged in, the tasks he needs to manage, or the fact that the sidebar currently collapsed.
-With MobX you can make your state reactive. This means that all derived views based on your state are updated automatically.
-The first section of this api documentation describes how to [make data reactive](#making-state-reactive).
+## 创建 observables
 
-_Views_ are all pieces of information that can be derived from the _State_ or its mutations.
-For example; the amount of unfinished tasks, the user interface and the data mutations that need to be synced with the server.
-Those are all forms of views.
-The second section describes how to [react to data changes](#reacting-to-state-changes).
 
-Finally your application has actions that _change state_.
-MobX does not dictate how to change your state.
-Instead of that, MobX tries to be as unobtrusive as possible.
-You can use mutable objects and arrays, real references, classes and cyclic data structures to store your state.
-With MobX you are free to mutate that state in any way you think is the best.
+### `observable(value)`
+用法:
+* `observable(value)`
+* `@observable classProperty = value`
 
-Different examples of storing state in ES5, ES6, or TypeScript, using plain objects, constructor functions or classes can be found in the [syntax documentation](syntax.md).
+Observable 值可以是JS基本数据类型、引用类型、普通对象、类实例、数组和映射。
+`observable(value)` 是一个方便的重载函数，总是试图创建最佳匹配的 observable 类型。
+你也可以直接创建所需的 observable 类型，请参见下文。
 
-The third section describes some [utility functions](#utility-functions) that might come in convenient.
+匹配类型应用了以下转换规则，但可以通过使用**调节器**进行微调。请参见下文。
 
-## Making state reactive
+1. 如果 **value** 是[ES6 Map](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map)的实例: 会返回一个新的 [Observable Map](map.md)。如果你不只关注某个特定entry的更改，而且对添加或删除其他entry时也做出反应的话，那么 Observable map 会非常有用。
+1. 如果 **value** 是数组，会返回一个 [Observable Array](array.md)。
+1. 如果 **value** 是没有原型的对象，那么对象会被克隆并且所有的属性都会被转换成可观察的。参见 [Observable Object](object.md)。
+1. 如果 **value** 是有原型的对象，JavaSript原始数据类型或者函数，会返回一个 [Boxed Observable](boxed.md)。MobX 不会将一个有原型的对象自动转换成可观察的，因为这是它构造函数的职责。对于这些类型你需要在它的构造函数中使用 `extendObservable` 或者在它的类定义中使用 `@observable`。
 
-### makeReactive(data, options)
+乍看之下，这些规则可能看上去很复杂，但实际上实践当中你会发现他们是非常直观的。
 
-`makeReactive` is the swiss knife of `mobx`. It converts `data` to something reactive.
-The following types are distinguished, details are described below.
+一些建议:
+* 要创建键是动态的对象时永远都使用 maps！对象上只有初始化时便存在的属性会转换成可观察的，尽管新添加的属性可以通过使用 `extendObservable` 转换成可观察的。
+* 要想使用 `@observable` 装饰器，首先要确保 在你的编译器(babel 或者 typescript)中 [装饰器是启用的](http://mobxjs.github.io/mobx/refguide/observable-decorator.html)。
+* 默认情况下将一个数据结构转换成可观察的是**有感染性的**，这意味着 `observable` 被自动应用于数据结构包含的任何值，或者将来会被该数据结构包含的值。这个行为可以通过使用 *modifiers* 或 *shallow* 来更改。
 
-* `Primitive`: Any boolean, string, number, null, undefined, date, or regex.
-* `PlainObject`: Any raw javascript object that wasn't created using a constructor function
-* `ComplexObject`: A javascript object that was created by a constructor function (using the `new` keyword, with the sole exception of `new Object`).
-* `Array`: A javascript array; anything which `Array.isArray` yields true.
-* `ViewFuncion`: A function that takes no arguments but produces a value based on its scope / closure.
-* `ComplexFunction`: A function that takes one or more arguments and might produce a value
+[&laquo;`observable`&raquo;](observable.md)  &mdash;  [&laquo;`@observable`&raquo;](observable-decorator.md)
 
-#### Primitive values
-If `data` is a primitive value, _complex_ object or function, a getter/setter function is returned:
-a function that returns its current value if invoked without arguments, or updates its current value if invoked with exactly one argument.
-If updated, it will notify all its _observers_.
+### `@observable property =  value`
 
-New observers can be registered by invoking the _.observe(callback, invokeImmediately=false)_ method.
-If the second parameter passed to `.observe` is true, the callback will be invoked with the current value immediately.
-Otherwise the callback will be invoked on the first change.
-Note that you might never use `.observe` yourself; as creating new [reactive functions or side-effects](#reacting-to-state-changes) is a more high-level approach to observe one or more values.
+`observable` 也可以用作属性的装饰器。它需要[启用装饰器](../best/decorators.md)而且它是 `extendObservable(this, { property: value })` 的语法糖。
 
-In practice you will hardly use `makeReactive` for primitives, as most primitive values will belong to some object.
+[&laquo;`详情`&raquo;](observable-decorator.md)
 
-```javascript
-var temperature = makeReactive(25);
-temperature.observe(function(newTemperature, oldTemperature) {
-  console.log('Temperature changed from ', oldTemperature, ' to ', newTemperature);
-});
-temperature(30);
-// prints: 'Temperature changed from 25 to 30'
-console.log(temperature());
-// prints: '30'.
-```
+### `observable.box(value)` & `observable.shallowBox(value)`
 
-#### Plain objects
+创建一个 observable 的盒子，它用来存储value的 observable 引用。使用 `get()` 方法可以得到盒子中的当前value，而使用 `set()` 方法可以更新value。
+这是所有其它 observable 创建的基础，但实际中你其实很少能使用到它。
+通常盒子会自动地尝试把任何还不是 observable 的新值转换成 observable 。使用 `shallowBox` 会禁用这项行为。
 
-If `makeReactive` is invoked on a plain objects, a new plain object with reactive properties based on the original properties will be returned.
-`makeReactive` will recurse into all property values of the original object.
-Any values that will be assigned to these properties in the future, will be made reactive as well if needed.
+[&laquo;`详情`&raquo;](boxed.md)
 
-View functions inside the object will become reactive properties of the object (see the next section for more info about reactive functions).
-Their `this` will be bound to the object automatically.
+### `observable.object(value)` & `observable.shallowObject(value)`
 
-Properties that will be added to the reactive object later on won't become reactive automatically.
-This makes it easy to extend objects with, for example, functions that are not reactive themselves but instead mutate the object.
-If you want to add a new reactive property to an existing object, just use `extendReactive`.
+为提供的对象创建一个克隆并将其所有的属性转换成 observable 。
+默认情况下这些属性中的任何值都会转换成 observable，但当使用 `shallowObject` 时只有属性会转换成 observable 引用，而值不会改变(这也适用于将来分配的任何值)。
 
-Example:
-```javascript
-var orderLine = makeReactive({
-  price: 10,
-  amount: 1,
-  total: function() {
-    return this.price * this.amount;
-  }
-});
+[&laquo;`详情`&raquo;](object.md)
 
-// observe is explained below,
-mobx.observe(function() {
-  console.log(orderline.total);
-});
-// prints: 10
+### `observable.array(value)` & `observable.shallowArray(value)`
 
-orderLine.amount = 3;
-// prints: 30
-```
+基于提供的值来创建一个新的 observable 数组。如果不想数组中的值转换成 observable 请使用 `shallowArray`。
 
-The recommended way to create reactive objects is to create a constructor function and use `extendReactive(this, properties)` inside the constructor;
-this keeps the responsibility of making an object inside the object and makes it impossible to accidentally use a non-reactive version of the object.
-However, some prefer to not use constructor functions at all in javascript applications.
-So MobX will work just as fine when using `makeReactive(plainObject)`.
+[&laquo;`详情`&raquo;](array.md)
 
-#### Complex objects
+### `observable.map(value)` & `observable.shallowMap(value)`
 
-Passing non-plain objects to `makeReactive` will result in a reactive reference to the object, similar to creating reactive primitive values.
-The constructor of such objects is considered responsible for creating reactive properties if needed.
+基于提供的值来创建一个新的 observable 映射。如果不想集合中的值转换成 observable 请使用 `shallowMap`。
+当想创建动态的键集合并且需要能观察到键的添加和移除时，请使用 `map`。
+注意只支持字符串键。
 
-#### Arrays
+[&laquo;`详情`&raquo;](map.md)
 
-For arrays a new, reactive array will be returned.
-Like with plain objects, reactiveness is a contagious thing; all values of the array,
-now or in the future, will be made reactive as well if needed.
+### `extendObservable` & `extendShallowObservable`
+用法: `extendObservable(target, ...propertyMaps)`。对于 `propertyMap` 中的每个键值对，都会作为一个(新)的 observable 属性引入到 target 对象中。
+还可以在构造函数中使用来引入 observable 属性，这样就不需要用装饰器了。
+如果 `propertyMap` 的某个值是一个 getter 函数，那么会引入一个**computed**属性。
 
-Arrays created using `makeReactive` provide a thin abstraction over native arrays.
-The most notable difference between built-in arrays is that reactive arrays cannot be sparse;
-values assigned to an index larger than `length` are considered to be out-of-bounds and will not become reactive.
+如果新的属性不应该具备感染性(即新分配的值不应该自动地转换成 observable)的话，请使用 `extendShallowObservable`。
+注意 `extendObservable` 增强了现有的对象，不像 `observable.object` 是创建一个新对象。
 
-Furthermore, `Array.isArray(reactiveArray)` and `typeof reactiveArray === "array"` will yield `false` for reactive arrays,
-but `reactiveArray instanceof Array` will return `true`.
+[&laquo;详情&raquo;](extend-observable.md)
 
-This has consequences when passing arrays to external methods or built-in functions, like `array.concat`, as they might not handle reactive arrays correctly.
-(This might improve in the future).
+### 调节器
+调节器可以作为装饰器或者组合 `extendObservable` 和 `observable.object` 使用，以改变特定属性的自动转换规则。
 
-***To avoid issues with other libraries, just make defensive copies before passing reactive arrays to external libraries using `array.slice()`.***
+可用的调节器列表:
 
-Reactive arrays support all available ES5 array methods. Besides those, the following methods are available as well:
+* `observable.deep`: 所有  observable 都使用的默认的调节器。它可以把任何指定的、非原始数据类型的、非 observable 的值转换成 observable。
+* `observable.ref`: 禁用自动的 observable 转换，只是创建一个 observable 引用。
+* `observable.shallow`: 只能与集合组合使用。 将任何分配的集合转换为浅 observable (而不是深 observable)的集合。 换句话说, 集合中的值将不会自动变为 observable。
+* `computed`: 创建一个衍生属性, 参见 [`computed`](computed-decorator.md)
+* `action`: 创建一个动作, 参见 [`action`](action.md)
 
-* `observe(listener, fireImmediately? = false)` Listen to changes in this array. The callback will receive arguments that express an array splice or array change, conforming to [ES7 proposal](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/observe). It returns a disposer function to stop the listener.
-* `clear()` Remove all current entries from the array.
-* `replace(newItems)` Replaces all existing entries in the array with new ones.
-* `find(predicate: (item, index, array) => boolean, thisArg?, fromIndex?)` Find implementation, basically the same as the ES7 Array.find proposal, but with added `fromIndex` parameter.
-* `remove(value)` Remove a single item by value from the array. Returns true if the item was found and removed.
-
-#### Functions
-
-Those are explained in the next [section](#reacting-to-state-changes).
-
-#### Further notes on `makeReactive`.
-
-`makeReactive` will not recurse into non-plain objects, multi-argument functions and any value that is wrapped in `asReference`.
-
-`makeReactive` will not recurse into objects that already have been processed by `makeReactive` or `extendReactive`.
-
-The second `options` parameter object is optional but can define using following flags:
-
-* `as` specifies what kind of reactive object should be made. Defaults to `"auto"`. Other valid values are `"reference"`, `"struct"` (in a later version see #8).
-* `scope` defined the `this` of reactive functions. Will be set automatically in most cases
-* `recurse` defaults `true`. If `false`, `makeActive` will not recurse into any child values.
-* `name`: can be set to assign a name to this observable, used by the developers tools in the `extras` namespaces.
-* `context` can be set to specify a certain context which is reported by the developers tools defined in the `extras`namespaces. Defaults to the object which caused this value to become reactive.
-
-More flags will be made available in the feature.
-
-`makeReactive` is the default export of the `mobx` module, so you can use `mobx(data, opts)` as a shorthand.
-
-### extendReactive(target, properties)
-
-`extendReactive` works similarly to `makeReactive`, but it extends an existing object instead of creating a new one. Similar to `Object.assign` or `jQuery.extend`.
-This is especially useful inside constructor functions or to extend existing (possibly already reactive) objects.
-
-In general, it is better to use `extendReactive(target, { property : value })` than `target.property = makeReactive(value)`.
-The difference is that in the later only creates a reactive value, while `extendReactive` will make the property itself reactive as well,
-so that you can safely assign new values to it later on.
-
-### asReference(value)
-
-See `makeReactive`, the given value will not be converted to a reactive structure if it is added to another reactive structure.
-The reference to it will be observable nonetheless.
-
-In the following example the properties of the dimensions object itself won't be reactive, but assigning a new object value to the `image.dimension` will be picked up:
+调节器可以作为装饰器使用:
 
 ```javascript
-var image = makeReactive({
-  src: "/some/path",
-  dimension: asReference({
-    width: 100,
-    height: 200
-  })
-});
-```
-
-### observable
-
-Decorator (or annotation) that can be used on ES6 or TypeScript properties to make them reactive.
-
-Note that in ES6 the annotation can only be used on getter functions, as ES6 doesn't support property initializers in class declarations.
-See also the [syntax section](syntax.md) to see how `@observable` can be combined with different flavors of javascript code.
-
-```javascript
-import {observable} from "mobx";
-
-class Order {
-    @observable orderLines: OrderLine[] = [];
-    @observable get total() {
-        return this.orderLines.reduce((sum, orderLine) => sum + orderLine.total, 0)
-    }
-}
-
-class OrderLine {
-    @observable price:number = 0;
-    @observable amount:number = 1;
-
-    constructor(price) {
-        this.price = price;
-    }
-
-    @observable get total() {
-        return "Total: " + this.price * this.amount;
-    }
+class TaskStore {
+    @observable.shallow tasks = []
 }
 ```
 
-## Reacting to state changes
-
-### makeReactive(function, options)
-
-Responding to changes in your state is simply the matter of passing a `function` that takes no parameters to `makeReactive`.
-MobX will track which reactive objects, array and other reactive functions are used by the provided function.
-MobX will call `function` again when any of those values have changed.
-
-This will happen in such a way one can never observe a stale output of `function`; updates are pushed synchronously.
-Invocations of `function` will only happen when none of its dependencies is stale, so that updates are atomic.
-This is a major difference with many other reactive frameworks.
-This sounds complicated and expensive but in practice you won't notice any performance overhead in any reasonable scenario.
-Reactive functions evaluate lazily; if nobody is observing the reactive function it will never evaluate.
-For non-lazy reactive functions see `observe`.
-
-Invoking `makeReactive` directly on a function will result in a _getter function_, similar to invoking `makeReactive` on primitive values.
-If `makeReactive` encounters a function inside an object passed through it,
-it will introduce a new property on that object, that uses the function as getter function for that property.
-
-The optional `options` parameter is an object.
-The `scope` property of that object can be set to define the `this` value that will be used inside the reactive function.
+或者作为属性调节器组合 `observable.object` / `observable.extendObservable` 使用。
+注意，调节器总是“附着”在属性上的。 因此，即使分配了新值，它们仍将保持有效。
 
 ```javascript
-var greeter = makeReactive({
-  who: "world",
-  greeting: function() {
-    return "Hello, " + this.who + "!!!";
-  }
-});
-
-var upperCaseGreeter = makeReactive(function() {
-  return greeter.greeting; // greeting has become an reactive property
-});
-
-var disposer = upperCaseGreeter.observe(function(newGreeting) {
-  console.log(newGreeting)
-});
-
-greeter.who = "Universe";
-// Prints: 'HELLO, UNIVERSE!!!'
-
-disposer(); // stop observing
-console.log(greeter.greeting); // prints the latest version of the reactive, derived property
-console.log(upperCaseGreeter()); // prints the latest version of the reactive function
+const taskStore = observable({
+    tasks: observable.shallow([])
+})
 ```
 
-### observe(function)
-
-`observe` can be used in those cases where you want to create a reactive function that will never have observers itself.
-This is usually the case when you need to bridge from reactive to imperative code, for example for logging, persistence or UI-updating code.
-When `observe` is used, `function` will always be
-triggered when one of its dependencies changes.
-(In contrast, `makeReactive(function)` creates functions that only re-evaluate if it has
-observers on its own, otherwise its value is considered to be irrelevant).
-
-```javascript
-var numbers = makeReactive([1,2,3]);
-var sum = makeReactive(() => numbers.reduce((a, b) => a + b, 0);
-
-var loggerDisposer = observe(() => console.log(sum());
-// prints '6'
-numbers.push(4);
-// prints '10'
-
-loggerDisposer();
-numbers.push(5);
-// won't print anything, nor is `sum` re-evaluated
-```
-
-Fun fact: `observe(func)` is actually an alias for `makeReactive(func).observe(function() { /* noop */ });`.
-
-### reactiveComponent(component)
-
-`reactiveComponent` turns a ReactJS component into a reactive one and is provided through the separate (and minimal) `mobx-react` package.
-Making a component reactive means that it will automatically observe any reactive data it uses.
-
-It is quite similar to `@connect` as found in several flux libraries, yet there are two important differences.
-With `@reactiveComponent` you don't need to specify which store / data should be observed in order to re-render at the appropriate time.
-Secondly, reactive components provide far more fine grained update semantics: Reactive components won't be observing a complete store or data tree, but only that data that is actually used during the rendering of the component. This might be a complete list, but also a single object or even a single property.
-The consequence of this is that components won't re-render unless some data that is actually used in the rendering has changed. Large applications really benefit from this in terms of performance.
-
-Rule of thumb is to use `reactiveComponent` on every component in your application that is specific for your application.
-Its overhead is neglectable and it makes sure that whenever you start using reactive data the component will respond to it.
-One exception are general purposes components that are not specific for your app. As these probably don't depend on the actual state of your application.
-For that reason it doesn't make sense to add `reactiveComponent` to them (unless their own state is expressed using reactive data structures as well).
-
-The `reactiveComponent` function / decorator supports both components that are constructed using `React.createClass` or using ES6 classes that extend `React.Component`. `reactiveComponent` is also available as mixin: `mobx.reactiveMixin`.
-
-`reactiveComponent` also prevents re-renderings when the *props* of the component have only shallowly changed, which makes a lot of sense if the data passed into the component is reactive.
-This behavior is similar to [React PureRender mixin](https://facebook.github.io/react/docs/pure-render-mixin.html), except that *state* changes are still always processed.
-If a component provides its own `shouldComponentUpdate`, that one takes precedence.
-
-Since in practice you will see that most reactive components become stateless, they can easily be hot-reloaded.
-You will discover that many small components will consist of just a render function.
-In such cases, you can also directly pass the render function to `reactiveComponent`, without building a component.
-The props will then be available as first argument of the function.
-
-_Note: when `reactiveComponent` needs to be combined with other decorators or higher-order-components, make sure that `reactiveComponent` is the most inner (first applied) decorator;
-otherwise it might do nothing at all._
-
-**ES6 class + decorator**
-```javascript
-@reactiveComponent class MyComponent extends React.Component {
-  /* .. */
-}
-```
-
-**ES6 class + function call**
-```javascript
-reactiveComponent(class MyCompoment extends React.Component {
-  /* .. */
-});
-```
-
-**ES5 + React.createClass**
-```javascript
-var MyComponent = reactiveComponent(React.createClass({
-  /* .. */
-}))
-```
-
-**ES5/6 + render function**
-```javascript
-var MyComponent = reactiveComponent(function (props) {
-    return <rendering />;
-});
-```
-
-## Utility functions
-
-### isReactive(value)
-
-Returns true if the given value was created or extended by mobx. Note: this function cannot be used to tell whether a property is reactive; it will determine the reactiveness of its actual value.
-
-### toJson(value)
-
-Converts a non-cyclic tree of observable objects into a JSON structure that is not observable. It is kind of the inverse of `mobx.makeReactive`
-
-### transaction(workerFunction)
-
-Transaction postpones the updates of computed properties until the (synchronous) `workerFunction` has completed.
-This is useful if you want to apply a bunch of different updates throughout your model before needing the updated computed values, e.g. while refreshing data from the back-end.
-In practice, you will probably never need `.transaction`, since observables typically update wickedly fast.
-
-```javascript
-var amount = mobx(3);
-var price = mobx(2.5);
-var total = mobx(function() {
-    return amount() * price();
-});
-total.observe(console.log);
-
-// without transaction:
-amount(2); // Prints 5
-price(3); // Prints 6
-
-// with transaction:
-mobx.transaction(function() {
-    amount(3);
-    price(4);
-});
-// Prints 12, after completing the transaction
-```
-
-### extras.getDependencyTree(thing, property?)
-
-Accepts something reactive and prints its current dependency tree; other reactive values it depends on. For observers, this method can be invoked on its disposer.
-Works for React components as well, but only if they are actually mounted (otherwise they won't be observing any data).
-For object properties, pass in the property name as second argument. `id` is unique and generated by mobx.
-`name` and `context` are determined automatically, unless they were overriden in the options passed to `makeReactive`.
-The returned dependency tree is a recursive structure with the following signature:
-
-```javascript
-interface IDependencyTree {
-    id: number;
-    name: string;
-    context: any;
-    dependencies?: IDependencyTree[];
-}
-```
+[&laquo;详情&raquo;](modifiers.md)
 
 
-### extras.getObserverTree(thing, property?)
+## Computed values(计算值)
 
-Similar to `getDependencyTree`, but observer tree returns a tree of all objects that are depending on `thing`. It returns a tree structure with the following structure:
+用法:
+* `computed(() => expression)`
+* `computed(() => expression, (newValue) => void)`
+* `computed(() => expression, options)`
+* `@computed get classProperty() { return expression; }`
+* `@computed.struct get classProperty() { return expression; }`
 
-```javascript
-interface IObserverTree {
-    id: number;
-    name: string;
-    context: any;
-    observers?: IObserverTree[];
-    listeners?: number;
-}
-```
+创建计算值，`expression` 不应该有任何副作用而只是返回一个值。
+如果任何 `expression` 中使用的 observable 发生改变，它都会自动地重新计算，但前提是计算值被某些 **reaction** 使用了。
 
-`listeners` defines the amount of external observers, attached by using `.observe` of some reactive value. Side-effects will always report 1 listener.
+[&laquo;详情&raquo;](computed-decorator.md)
 
-### extras.trackTransitions(extensive, onReport)
+## Actions(动作)
 
-Debugging tool that reports each change in a reactive value.
-The optional `extensive` boolean indicates whether all control events should be reported, or only the events that changes a value. Defaults to `false`.
-The `onReport` function is a callback that will be invoked for each transition. If omitted, the reports will be printed to the console.
-`trackTransitions` returns a function that can be used to stop the tracker.
+任何应用都有动作。动作是任何用来修改状态的东西。
 
-Each transition is reported as an object with the following signature. The `state` value is either `STALE`, `PENDING` or `READY`.
+使用MobX你可以在代码中显式地标记出动作所在的位置。
+动作可以有助于更好的组织代码。
+建议在任何更改 observable 或者有副作用的函数上使用动作。
+结合开发者工具的话，动作还能提供非常有用的调试信息。
+注意: 当启用**严格模式**时，需要强制使用 `action`，参见 `useStrict`。
 
-```javascript
-interface ITransitionEvent {
-    id: number;
-    name: string;
-    context: Object;
-    state: string;
-    changed: boolean;
-    newValue: string;
-}
-```
+[&laquo;详情&raquo;](action.md)
+
+用法:
+* `action(fn)`
+* `action(name, fn)`
+* `@action classMethod`
+* `@action(name) classMethod`
+* `@action boundClassMethod = (args) => { body }`
+* `@action(name) boundClassMethod = (args) => { body }`
+
+对于一次性动作，可以使用 `runInAction(name?, fn, scope?)` , 它是 `action(name, fn, scope)()` 的语法糖.
+
+## Reactions(反应) & Derivations(衍生)
+
+**计算值** 是自动响应状态变化的**值**。
+**反应*** 是自动响应状态变化的**副作用**。
+反应可以确保当相关状态发生变化时指定的副作用(主要是 I/O)可以自动地执行，比如打印日志、网络请求、等等。
+使用反应最常见的场景是 React 组件的 `observer` 装饰器(参见下文)。
+
+### `observer`
+可以用作包裹 React 组件的高阶组件。
+在组件的 `render` 函数中的任何已使用的 observable 发生变化时，组件都会自动重新渲染。
+注意 `observer` 是由 `"mobx-react"` 包提供的，而不是 `mobx` 本身。
+[&laquo;详情&raquo;](observer-component.md)
+
+用法:
+* `observer(React.createClass({ ... }))`
+* `observer((props, context) => ReactElement)`
+* `observer(class MyComponent extends React.Component { ... })`
+* `@observer class MyComponent extends React.Component { ... })`
+
+
+### `autorun`
+用法：`autorun(debugname?, () => { sideEffect })`。`autorun` 负责运行所提供的 `sideEffect` 并追踪在`sideEffect`运行期间访问过的 `observable` 的状态。
+将来如果有其中一个已使用的 observable 发生变化，同样的`sideEffect`会再运行一遍。
+`autorun` 返回一个清理函数用来取消副作用。[&laquo;详情&raquo;](autorun.md)
+
+### `when`
+用法: `when(debugname?, () => condition, () => { sideEffect })`。
+`condition` 表达式会自动响应任何它所使用的 observable。
+一旦表达式返回的是真值，副作用函数便会立即调用，但只会调用一次。
+`when` 返回一个清理函数用来提早取消这一切。[&laquo;详情&raquo;](when.md)
+
+### `autorunAsync`
+用法: `autorunAsync(debugname?, () => { sideEffect }, delay)`。类似于 `autorun`，但是`sideEffect`会延迟执行,并且根据给定的 `delay` 来进行函数去抖(debounce)。
+[&laquo;详情&raquo;](autorun-async.md)
+
+### `reaction`
+用法: `reaction(debugname?, () => data, data => { sideEffect }, fireImmediately = false, delay = 0)`.
+`reaction` 是 `autorun` 的变种，在如何追踪 observable 方面给予了更细粒度的控制。
+它接收两个函数，第一个是追踪并返回数据，该数据用作第二个函数，也就是副作用的输入。
+与 'autorun' 不同的是副作用起初不会运行，并且在执行副作用时访问的任何 observable 都不会被追踪。
+和 `autorunAsync` 一样，副作用是可以进行函数去抖的。[&laquo;详情&raquo;](reaction.md)
+
+### `expr`
+用法: `expr(() => someExpression)`。只是`computed(() => someExpression).get()` 的简写形式。
+`expr` 在一些极少数场景下用来优化另一个计算值函数或者 reaction 是有用的。
+通常情况是将函数拆分成一些更小的计算值函数来达到同样的效果，这样做更简单，也更合理。
+[&laquo;详情&raquo;](expr.md)
+
+### `onReactionError`
+
+用法: `extras.onReactionError(handler: (error: any, derivation) => void)`
+
+此方法附加一个全局错误监听器，对于从 _reaction_ 抛出的每个错误都会调用该错误监听器。
+它可以用来监控或者测试。
+
+------
+
+# 实用工具
+
+_有一些工具函数可以使得 observable 或者  计算值用起来更方便。
+更多实用工具可以在 [mobx-utils](https://github.com/mobxjs/mobx-utils) 包中找到。_
+### `Provider` (`mobx-react` 包)
+
+可以用来使用 React 的`context`机制来传递 store 给子组件。参见[`mobx-react` 文档](https://github.com/mobxjs/mobx-react#provider-experimental)。
+
+### `inject` (`mobx-react` 包)
+
+ 相当于`Provider` 的高阶组件。可以用来从 React 的`context`中挑选 store 作为 prop 传递给目标组件。用法:
+* `inject("store1", "store2")(observer(MyComponent))`
+* `@inject("store1", "store2") @observer MyComponent`
+* `@inject((stores, props, context) => props) @observer MyComponent`
+* `@observer(["store1", "store2"]) MyComponent` is a shorthand for the the `@inject() @observer` combo.
+
+### `toJS`
+用法: `toJS(observableDataStructure)`。把 observable 数据结构转换成普通的 javascript 对象并忽略计算值。 [&laquo;详情&raquo;](tojson.md)
+
+### `isObservable`
+用法: `isObservable(thing, property?)`。如果给定的thing，或者thing指定的`property`是 observable 的话，返回true。
+适用于所有的 observable、计算值和 reaction 的清理函数。[&laquo;详情&raquo;](is-observable)
+
+### `isObservableObject|Array|Map` 和 `isBoxedObservable`
+用法: `isObservableObject(thing)`, `isObservableArray(thing)`, `isObservableMap(thing)`,  `isBoxedObservable(thing)`。 如果类型匹配的话返回true。
+
+### `isArrayLike`
+用法: `isArrayLike(thing)`。如果给定的thing是 javascript 数组或者 observable (MobX的)数组的话，返回true。
+这个方法更简便。
+注意，observable 数组可以通过 `.slice()` 转变成 javascript 数组。
+
+### `isAction`
+用法: `isAction(func)`。如果给定函数是用`action` 方法包裹的或者是用 `@action` 装饰的话，返回true。
+
+### `isComputed`
+用法: `isComputed(thing, property?)`。如果给定的thing是计算值或者thing指定的`property`是计算值的话，返回true。
+
+### `createTransformer`
+用法: `createTransformer(transformation: A => B, onCleanup?): A = B`。
+可以用来创建将一个值转换为另一个可以反应和记忆的值的函数。
+它的行为类似于计算值，可以用于一些高级模式，比如非常高效的数组映射，映射归并或者不是对象的一部分的计算值。
+[&laquo;详情&raquo;](create-transformer.md)
+
+### `intercept`
+用法: `intercept(object, property?, interceptor)`.
+这个API可以在应用 observable 的API之前，拦截更改。对于验证、标准化和取消等操作十分有用。
+[&laquo;详情&raquo;](observe.md)
+
+### `observe`
+用法: `observe(object, property?, listener, fireImmediately = false)`
+这是一个底层API，用来观察一个单个的 observable 值。
+[&laquo;详情&raquo;](observe.md)
+
+### `useStrict`
+用法: `useStrict(boolean)`。
+**全局性** 地启用/禁用严格模式。
+在严格模式下，不允许在 [`action`](action.md) 外更改任何状态。
+还可以参见 `extras.allowStateChanges`。
+
+
+
+# 开发工具
+
+_如果你想在 MobX 的上层构建一些很酷的工具或者想检查 MobX 的内部状态的话，下列API可能会派上用场。_
+
+### `"mobx-react-devtools"` 包
+mobx-react-devtools 是个功能强大的包，它帮助你调查 React 组件的性能和依赖。
+还有基于 `spy` 的强大的日志功能。[&laquo;详情&raquo;](../best/devtools.md)
+
+### `spy`
+用法: `spy(listener)`.
+注册全局侦查监听器可以监听所有 MobX 中发生的时间。
+它类似于将一个 `observe` 监听器一次性附加到**所有的** observables 上，而且还负责正在运行的动作和计算的通知。
+用于 `mobx-react-devtools` 。
+[&laquo;详情&raquo;](spy.md)
+
+### `whyRun`
+用法:
+* `whyRun()`
+* `whyRun(Reaction object / ComputedValue object / disposer function)`
+* `whyRun(object, "computed property name")`
+
+`whyRun` 是个可以在`computed`或 reaction(`autorun`、 `reaction` 或 使用了 `observer` 的 React 组件的 `render` 方法)中使用的小功能，它可以打印出 衍生(derivation) 正在运行的原因以及在哪种情况下它会再次运行。
+这应该有助于更深入地了解 MobX 运作的时机和原因，并防止一些初学者的错误。
+
+
+### `extras.getAtom`
+用法: `getAtom(thing, property?)`.
+返回给定的 observable 对象、属性、reaction 等的背后作用的`Atom`。
+
+### `extras.getDebugName`
+用法: `getDebugName(thing, property?)`
+返回 observable 对象、属性、reaction等(生成的)易读的调试名称。用于 `mobx-react-devtools` 的示例。
+
+### `extras.getDependencyTree`
+用法: `getDependencyTree(thing, property?)`.
+返回给定的 reaction / 计算 当前依赖的所有 observable 的树型结构。
+
+### `extras.getObserverTree`
+用法: `getObserverTree(thing, property?)`.
+返回正在观察给定的 observable 的所有 reaction / 计算的树型结构。
+
+### `extras.isSpyEnabled`
+用法: `isSpyEnabled()`. 如果至少有一个 spy 是活动的话，返回true。
+
+### `extras.spyReport`
+用法: `spyReport({ type: "your type", &laquo;details&raquo; data})`。 发射自定义`spy`事件。
+
+### `extras.spyReportStart`
+用法: `spyReportStart({ type: "your type", &laquo;details&raquo; data})`。 发射自定义`spy`事件。将启动一个新的嵌套`spy`事件组，该事件组应该使用 `spyReportEnd（）` 关闭。
+
+### `extras.spyReportEnd`
+用法: `spyReportEnd()`。关闭由 `extras.spyReportStart` 开启的当前`spy`的事件组。
+
+### `"mobx-react"` 开发钩子
+`mobx-react` 包提供了以下几个供 `mobx-react-devtools` 使用的附加API:
+* `trackComponents()`: 启用追踪功能,追踪使用了`observer`的 React 组件
+* `renderReporter.on(callback)`: 使用 `observer` 的 React 组件每次渲染都会调用callback，并附带相关的时间信息等等
+* `componentByNodeRegistery`: 使用ES6 WeakMap 将 DOMNode 映射到使用 `observer` 的 React 组件实例
+
+
+# 内部函数
+
+_以下方法都在 MobX 内部使用，在极少数情况下可能会派上用场。 但是通常 MobX 提供了更多的声明性替代方法来解决同样的问题。如果你尝试扩展 MobX 的话，它们可能会派上用场。_
+
+### `transaction`
+用法: `transaction(() => { block })`.
+已废弃，使用 action 或者 `runInAction` 替代。
+低等级API，用于批量处理状态更改。
+在`block`中进行的状态更改在`block`结束前不会导致任何计算或 reaction 的运行。
+尽管如此，(不管何时)检查`transaction`中`computed`值,返回的值仍然是一致的。
+建议使用 `action`来替代，它会在内部使用 `transaction`。
+[&laquo;详情&raquo;](transaction.md)
+
+### `untracked`
+用法: `untracked(() => { block })`.
+低等级API，在 reactions 和 compuations 内部可能会有用处。
+在 `block` 中访问任何 observable 都不会导致 reaction / compuation 自动重新计算。同样,
+建议使用 `action`来替代，它会在内部使用 `untracked`。
+[&laquo;详情&raquo;](untracked.md)
+
+### `Atom`
+实用程序类，可用于创建你自己的 observable 数据结构，并将它们连接到 MobX。
+在所有 observable 数据类型的内部使用。
+[&laquo;详情&raquo;](extending.md)
+
+### `Reaction`
+实用程序类，可用于创建自己的 reaction ，并将它们连接到 MobX。
+在 `autorun`, `reaction` (函数)等内部使用。
+[&laquo;详情&raquo;](extending.md)
+
+### `extras.allowStateChanges`
+用法: `allowStateChanges(allowStateChanges, () => { block })`.
+可以用于 允许/禁止 某个函数中的状态变化。
+在 `action` 内部使用以允许更改，在 `computed` 和 `observer` 内部使用以禁止状态更改。
+
+### `extras.resetGlobalState`
+用法: `resetGlobalState()`.
+重置 MobX 内部全局状态。默认情况下 MobX 使用快速失败(fail fast)机制, 如果在`computation `或 `reaction` 内发生异常,MobX会拒绝再次运行它们。
+此函数将 MobX 重置为归零状态。 现有的 `spy` 监听器和严格模式下的当前值将被保留。
